@@ -10,19 +10,16 @@ import sklearn.preprocessing
 
 parser = argparse.ArgumentParser(description='face model test')
 # general
-parser.add_argument('--model', default='./model/iqiyia1,40', help='')
+parser.add_argument('--model', default='./model/mlp/iqiyi1,40', help='')
 parser.add_argument('--gpu', default=0, type=int, help='gpu id')
-parser.add_argument('--inputs', default='/media/3T_disk/my_datasets/iqiyi_vid/feat_testa', help='')
-parser.add_argument('--output', default='/media/3T_disk/my_datasets/iqiyi_vid/pred_testa', help='')
+parser.add_argument('--inputs', default='./iqiyi_vid/data3/val', help='')
+parser.add_argument('--output', default='./iqiyi_vid/data3/pred_vala1', help='')
 args = parser.parse_args()
-
 
 print(args)
 MODE = 2
 emb_size = 0
 model = None
-
-
 
 def get_score(feat):
   data = mx.nd.array(feat)
@@ -116,7 +113,7 @@ for name, items in DB_NAME.iteritems():
   #feat = sklearn.preprocessing.normalize(feat)
   #label = items[0][2]
   flag = items[0][3]
-  # assert flag==3
+  assert flag==2
   buf.append( (name, feat) )
   if len(buf)==batch_size:
     process(buf)

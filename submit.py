@@ -3,16 +3,23 @@ import shutil
 import sys
 import pickle
 import numpy as np
+import argparse
 
-OUTPUT_DIR = '/media/3T_disk/my_datasets/iqiyi_vid/'   # test feature output
+
+parser = argparse.ArgumentParser(description='generate submit result')
+# general
+parser.add_argument('--submit-name', default='Submit_fbn_N100.txt', help='')
+parser.add_argument('--output-dir', default='./iqiyi_vid/data3', help='')
+parser.add_argument('--predict', default='pred_vala1', help='')
+args = parser.parse_args()
 
 
 #e>c>a>h>d
 DEBUG='IQIYI_VID_TEST_0094168.mp4'
-submit_name = '0001'
 FPS = []
-for a in ['a']:
-    FPS.append('pred_test%s'%(a))
+FPS.append(args.predict)
+# for a in ['a']:
+#     FPS.append('pred_vala_old%s'%(a))
 weights = [1.0]*len(FPS)
 size = len(FPS)
 #size = 2
@@ -22,7 +29,7 @@ dcount = 0
 for i in range(size):
   fp = FPS[i]
   weight = weights[i]
-  _input = os.path.join(OUTPUT_DIR, fp)
+  _input = os.path.join(args.output_dir, fp)
   print(_input, weight)
   f = open(_input, 'rb')
   while True:
@@ -47,11 +54,9 @@ for i in range(size):
   f.close()
 print(len(name2score), dcount)
 
-
-print(len(name2score), dcount)
 ret_map = {}
 TOPK = 100
-N = 200
+N = 100
 #S = 10000.0
 S = 1.0
 zcount = 0
@@ -85,13 +90,14 @@ for name, xscore in name2score.iteritems():
       ret_map[label] = []
     ret_map[label].append( (name, score) )
     idfound = True
-out_filename='./Submit_%s.txt'%submit_name
+out_filename=os.path.join(args.output_dir, args.submit_name)
 print(len(ret_map), zcount, out_filename)
 outf = open(out_filename, 'w')
 #out_filename2='./gsubmit_score.txt'
 #outf2 = open(out_filename2, 'w')
 empty_count=0
 min_len = 99999
+cnt = 0
 for label, ret_list in ret_map.iteritems():
   ret_list = sorted(ret_list, key = lambda x : x[1], reverse=True)
   if TOPK>0 and len(ret_list)>TOPK:
@@ -100,6 +106,7 @@ for label, ret_list in ret_map.iteritems():
   out_items = [str(label)]
   #out_items2 = [str(label)]
   for ir, r in enumerate(ret_list):
+    cnt += 1
     name = r[0]
     score = r[1]
     out_items.append(name)
@@ -109,3 +116,4 @@ for label, ret_list in ret_map.iteritems():
 outf.close()
 #outf2.close()
 print('min', min_len)
+print(cnt)

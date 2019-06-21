@@ -47,10 +47,8 @@ parser = argparse.ArgumentParser(description='face model test')
 # general
 parser.add_argument('--image-size', default='112,112', help='')
 parser.add_argument('--model', default='./model/model-r100-gg/model,0', help='path to load model.') #0.875
-# parser.add_argument('--input', default='/media/3T_disk/my_datasets/iqiyi_vid/det_trainval', help='')
-parser.add_argument('--input', default='/media/3T_disk/my_datasets/iqiyi_vid/det_test', help='')
-# parser.add_argument('--output', default='/media/3T_disk/my_datasets/iqiyi_vid/feat_trainvala', help='')
-parser.add_argument('--output', default='/media/3T_disk/my_datasets/iqiyi_vid/feat_testa', help='')
+parser.add_argument('--input', default='./iqiyi_vid/data2/det_trainval', help='')
+parser.add_argument('--output', default='./iqiyi_vid/data2/feat_trainval', help='')
 parser.add_argument('--gpu', default=0, type=int, help='gpu id')
 parser.add_argument('--det', default=0, type=int, help='mtcnn option, 2 means using R+O, else using O')
 parser.add_argument('--sampling', default=3, type=int, help='')
@@ -58,7 +56,7 @@ parser.add_argument('--aug', default=0, type=int, help='')
 parser.add_argument('--threshold', default=0.9, type=float, help='clustering dist threshold')
 args = parser.parse_args()
 
-
+cnt = 0
 model = None
 
 #PARTS = [1]
@@ -110,7 +108,7 @@ def get_feature(R, label, flag):
   assert _features.shape[0]%c==0
   ic = 0
   features = None
-  while ic<c:
+  while ic<len(imgs):
     feat = _features[ic:ic+c,:]
     if features is None:
       features = feat
@@ -141,6 +139,7 @@ def get_feature(R, label, flag):
     pose_map[pose].append(i)
   pose_keys = sorted(pose_keys)
   F = []
+
   for pose in pose_keys:
     #if pose!=0:
     #  continue
@@ -148,6 +147,10 @@ def get_feature(R, label, flag):
     x = X[arr,:]
     feat = np.sum(x, axis=0)
     norm = np.linalg.norm(feat)
+    if norm == 0:
+        cnt += 1
+        print("error: norm is 0!")
+        continue
     feat /= norm
     F.append(feat)
 
@@ -183,5 +186,5 @@ while True:
 
 fin.close()
 f.close()
-
+print(cnt)
 

@@ -19,17 +19,15 @@ parser = argparse.ArgumentParser(description='face model test')
 # general
 parser.add_argument('--image-size', default='112,112', help='')
 parser.add_argument('--model', default='./model/model-r50-gg/model,0', help='path to load model.') #0.875
-# parser.add_argument('--output', default='/media/3T_disk/my_datasets/iqiyi_vid/det_trainval', help='')
-parser.add_argument('--output', default='/media/3T_disk/my_datasets/iqiyi_vid/det_test', help='')
-parser.add_argument('--dataset', default='/media/3T_disk/my_datasets/iqiyi_vid', help='')
+parser.add_argument('--output', default='./iqiyi_vid/data2/det_trainval', help='')
+parser.add_argument('--dataset', default='./iqiyi_vid/data1', help='')
 parser.add_argument('--gpu', default=0, type=int, help='gpu id')
-parser.add_argument('--det', default=0, type=int, help='essh option')
+parser.add_argument('--det', default=0, type=int, help='mtcnn option, 2 means using R+O, else using O')
 parser.add_argument('--sampling', default=3, type=int, help='')
 parser.add_argument('--split', default='', type=str, help='')
 parser.add_argument('--threshold', default=0.9, type=float, help='clustering dist threshold')
 parser.add_argument('--quality-threshold', default=10.0, type=float, help='quality threshold')
-# parser.add_argument('--stage', default='trainval', type=str, help='choose trainval or test stage')
-parser.add_argument('--stage', default='test', type=str, help='choose trainval or test stage')
+parser.add_argument('--stage', default='trainval', type=str, help='choose trainval or test stage')
 args = parser.parse_args()
 
 
@@ -238,7 +236,7 @@ if args.stage == 'trainval':
     if len(R)==0:
       continue
     flag = 2
-    pickle.dump((name, R, label, flag), f, protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump((name, R, c, flag), f, protocol=pickle.HIGHEST_PROTOCOL)
 
   f.close()
 
@@ -248,7 +246,7 @@ else:
   test_names = []
   dataset = os.path.join(args.dataset, 'IQIYI_VID_TEST')
   _list = os.listdir(dataset)
-  _list = sorted(_list)
+  _list = sorted(_list)  
   for video_file in _list:
     name = video_file
     path = os.path.join(dataset, name)

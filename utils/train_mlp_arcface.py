@@ -14,6 +14,7 @@ from mxnet import ndarray as nd
 import argparse
 import mxnet.optimizer as optimizer
 import sklearn
+from config import config, default, generate_config
 #sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
 #import center_loss
 
@@ -67,11 +68,15 @@ class LossValueMetric(mx.metric.EvalMetric):
 def parse_args():
   parser = argparse.ArgumentParser(description='Train face network')
   # general
-  parser.add_argument('--data', default='./iqiyi_vid/data3/trainval', help='')
-  parser.add_argument('--prefix', default='./model/mlp/iqiyi1', help='directory to save model.')
+  parser.add_argument('--loss', default=default.loss, help='loss config')
+  args, rest = parser.parse_known_args()
+  generate_config(args.loss)
+
+  parser.add_argument('--network', default='r100', help='network config')
+  parser.add_argument('--data', default='./iqiyi_vid/data2/trainvala', help='')
+  parser.add_argument('--prefix', default='./model/mlp/iqiyia1_arcface', help='directory to save model.')
   parser.add_argument('--pretrained', default='', help='pretrained model to load')
   parser.add_argument('--ckpt', type=int, default=1, help='checkpoint saving option. 0: discard saving. 1: save when necessary. 2: always save')
-  parser.add_argument('--loss-type', type=int, default=4, help='loss type')
   parser.add_argument('--num-filter', type=int, default=1024, help='')
   parser.add_argument('--num-classes', type=int, default=4935, help='')
   parser.add_argument('--split', type=int, default=-1, help='')
@@ -80,8 +85,7 @@ def parse_args():
   parser.add_argument('--begin-epoch', type=int, default=0, help='training epoch size.')
   parser.add_argument('--end-epoch', type=int, default=50, help='training epoch size.')
   parser.add_argument('--lr-step', type=str, default='30,35,40', help='steps of lr changing')
-  #parser.add_argument('--lr-step', type=str, default='20,30,40,45', help='steps of lr changing')
-  parser.add_argument('--network', default='r100', help='specify network')
+#   parser.add_argument('--lr-step', type=str, default='40,60,80,100', help='steps of lr changing')
   parser.add_argument('--lr', type=float, default=0.2, help='start learning rate')
   parser.add_argument('--wd', type=float, default=0.0005, help='weight decay')
   parser.add_argument('--mom', type=float, default=0.9, help='momentum')
@@ -175,50 +179,88 @@ def load_data(args):
   return train_iter, val_iter, emb_size, len(label_train)
 
 def get_symbol(args, arg_params, aux_params):
-  SE = False
-  num_layers = 3
   data = mx.symbol.Variable('data')
-  label = mx.symbol.Variable('softmax_label')
-
-  n_input = args.emb_size
+  gt_label = mx.symbol.Variable('softmax_label')
   body = data
+  n_input = args.emb_size
+    
+  is_softmax = True
+  SE = False
+  num_layers = 2
   for l in range(num_layers):
     shortcut = body
-    n_output = args.num_filter if l<num_layers-1 else args.num_classes
+    n_output = args.num_filter
     _weight = mx.symbol.Variable("stage%d_weight"%l, shape=(n_output, n_input))
     _bias = mx.symbol.Variable('stage%d_bias'%l, lr_mult=2.0, wd_mult=0.0)
     #_bias = mx.symbol.Variable('stage%d_bias'%l, lr_mult=1.0, wd_mult=1.0)
     body = mx.sym.FullyConnected(data=body, weight = _weight, bias = _bias, num_hidden=n_output, name='stage%d'%l)
-    if l<num_layers-1:
-      body = mx.sym.BatchNorm(data=body, name='stage%d_bn' %(l), fix_gamma=False,momentum=0.9)    
-      #body = mx.sym.Activation(body, act_type='relu')
-      body = mx.sym.LeakyReLU(data = body, act_type='prelu')
-      if SE:
+    body = mx.sym.BatchNorm(data=body, name='stage%d_bn' %(l), fix_gamma=False,momentum=0.9)    
+    #body = mx.sym.Activation(body, act_type='relu')
+    body = mx.sym.LeakyReLU(data = body, act_type='prelu')
+    if SE:
         se = mx.sym.FullyConnected(data=body, num_hidden=n_output//2, name='stage%d_se'%l)
         se = mx.sym.Activation(se, act_type='relu')
         se = mx.sym.FullyConnected(data=se, num_hidden=n_output, name='stage%d_se2'%l)
         se = mx.symbol.Activation(data=se, act_type='sigmoid', name="stage%d_se2_sigmoid"%l)
         body = mx.symbol.broadcast_mul(body, se)
-      body = mx.sym.Dropout(body, 0.2)
-      if n_output==n_input:
+    body = mx.sym.Dropout(body, 0.2)
+    if n_output==n_input:
         body = shortcut+body
-    #if l<num_layers-1:
-    #  body = mx.sym.Dropout(body, 0.5)
     n_input = n_output
-  fc7 = body
+
+  args.emb_size = n_input
+  embedding = body
+  if config.loss_name=='softmax': #softmax
+    _weight = mx.symbol.Variable("fc7_weight", shape=(args.num_classes, args.emb_size), 
+        lr_mult=config.fc7_lr_mult, wd_mult=config.fc7_wd_mult, init=mx.init.Normal(0.01))
+    if config.fc7_no_bias:
+      fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=args.num_classes, name='fc7')
+    else:
+      _bias = mx.symbol.Variable('fc7_bias', lr_mult=2.0, wd_mult=0.0)
+      fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, bias = _bias, num_hidden=args.num_classes, name='fc7')
+  elif config.loss_name=='margin_softmax':
+    _weight = mx.symbol.Variable("fc7_weight", shape=(args.num_classes, args.emb_size), 
+        lr_mult=config.fc7_lr_mult, wd_mult=config.fc7_wd_mult, init=mx.init.Normal(0.01))
+    s = config.loss_s
+    _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+    nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n')*s
+    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes, name='fc7')
+    if config.loss_m1!=1.0 or config.loss_m2!=0.0 or config.loss_m3!=0.0:
+        if config.loss_m1==1.0 and config.loss_m2==0.0:
+          s_m = s*config.loss_m3
+          gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = s_m, off_value = 0.0)
+          fc7 = fc7-gt_one_hot
+        else:
+          zy = mx.sym.pick(fc7, gt_label, axis=1)
+          cos_t = zy/s
+          t = mx.sym.arccos(cos_t)
+          if config.loss_m1!=1.0:
+            t = t*config.loss_m1
+          if config.loss_m2>0.0:
+            t = t+config.loss_m2
+          body = mx.sym.cos(t)
+          if config.loss_m3>0.0:
+            body = body - config.loss_m3
+          new_zy = body*s
+          diff = new_zy - zy
+          diff = mx.sym.expand_dims(diff, 1)
+          gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = 1.0, off_value = 0.0)
+          body = mx.sym.broadcast_mul(gt_one_hot, diff)
+          fc7 = fc7+body
+
   if args.fbn:
     fc7 = mx.sym.BatchNorm(data=fc7, name='fc7', fix_gamma=True, momentum=0.9)    
   else:
     fc7 = mx.sym.identity(data=fc7, name='fc7')
-  #gt_one_hot = mx.sym.one_hot(label, depth = args.num_classes, on_value = s_m, off_value = 0.0)
-  softmax = mx.symbol.SoftmaxOutput(data=fc7, label = label, name='softmax', normalization='valid')
+  #gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = s_m, off_value = 0.0)
+  softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax', normalization='valid')
   out_list = []
   out_list.append(softmax)
   if args.ce_loss:
     #ce_loss = mx.symbol.softmax_cross_entropy(data=fc7, label = gt_label, name='ce_loss')/args.per_batch_size
     body = mx.symbol.SoftmaxActivation(data=fc7)
     body = mx.symbol.log(body)
-    _label = mx.sym.one_hot(label, depth = args.num_classes, on_value = -1.0, off_value = 0.0)
+    _label = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = -1.0, off_value = 0.0)
     body = body*_label
     ce_loss = mx.symbol.sum(body)/args.per_batch_size
     out_list.append(mx.symbol.BlockGrad(ce_loss))
